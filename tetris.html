@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tetris</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #222;
+      font-family: Arial, sans-serif;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    #menu, #gameContainer, #tutorialContainer, #leaderboardContainer {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+    }
+    #menu.active, #gameContainer.active, #tutorialContainer.active, #leaderboardContainer.active {
+      display: flex;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 18px;
+      background-color: #444;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #666;
+    }
+    canvas {
+      border: 2px solid white;
+      background-color: #111;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      width: 340px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .scoreboard {
+      text-align: right;
+      font-size: 14px;
+    }
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    .menu-options {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      margin: 10px 0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 300px;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid white;
+      padding: 5px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="menu" class="active">
+    <h1>Tetris</h1>
+    <p id="welcomeMsg"></p>
+    <button id="startNormal">▶️ Mulai Biasa</button>
+    <button id="startChallenge">🧗 Mode Tantangan</button>
+    <button id="tutorialBtn">📚 Tutorial</button>
+    <button id="leaderboardBtn">📶 Leaderboard</button>
+    <button id="changeNickname">✏️ Ganti Nickname</button>
+  </div>
+
+  <div id="tutorialContainer">
+    <h2>📚 Tutorial</h2>
+    <p>⬅️ ➡️ ⬇️ 🔄: Kontrol permainan.</p>
+    <p>☰: Tampilkan menu saat bermain (Pause, Restart, Kembali ke Menu).</p>
+    <p>📶 Leaderboard: Menampilkan peringkat pemain berdasarkan level tertinggi di Mode Tantangan.</p>
+    <button onclick="goToMenu()">⬅️ Kembali ke Menu</button>
+  </div>
+
+  <div id="leaderboardContainer">
+    <h2>📶 Leaderboard Tantangan</h2>
+    <table>
+      <thead>
+        <tr><th>Nama</th><th>Level</th></tr>
+      </thead>
+      <tbody id="leaderboardTable"></tbody>
+    </table>
+    <button onclick="goToMenu()">⬅️ Kembali ke Menu</button>
+  </div>
+
+  <div id="gameContainer">
+    <div class="header">
+      <button id="menuToggle">☰</button>
+      <div class="scoreboard">
+        <div>👤 <span id="nicknameDisplay"></span></div>
+        <div>Skor: <span id="score">0</span></div>
+        <div id="levelDisplay" style="display:none;">Level: <span id="level">1</span></div>
+        <div>Skor Tertinggi: <span id="highscore">0</span></div>
+      </div>
+    </div>
+    <div class="menu-options" id="menuOptions">
+      <button id="pause">⏸️ Pause</button>
+      <button id="restart">🔄 Restart</button>
+      <button id="backToMenu">⬅️ Kembali ke Menu</button>
+    </div>
+    <canvas id="tetris" width="300" height="600"></canvas>
+    <div class="controls">
+      <button id="left">⬅️</button>
+      <button id="rotate">🔄</button>
+      <button id="right">➡️</button>
+      <button id="down">⬇️</button>
+    </div>
+  </div>
+
+  <script>
+    // Nickname
+    let nickname = localStorage.getItem("nickname") || prompt("Masukkan nickname kamu:") || "Pemain";
+    localStorage.setItem("nickname", nickname);
+
+    const nicknameDisplay = document.getElementById("nicknameDisplay");
+    nicknameDisplay.textContent = nickname;
+    document.getElementById("welcomeMsg").textContent = "Halo, " + nickname + "! Pilih mode permainan:";
+
+    // Canvas
+    const canvas = document.getElementById('tetris');
+    const ctx = canvas.getContext('2d');
+    const rows = 20, cols = 10, blockSize = 30;
+    const colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33A6', '#FF8C33', '#8C33FF', '#33FFF6'];
+    const tetrominoes = [
+      [[1, 1, 1, 1]], [[1, 1], [1, 1]],
+      [[1, 1, 0], [0, 1, 1]], [[0, 1, 1], [1, 1, 0]],
+      [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]], [[0, 1, 0], [1, 1, 1]],
+    ];
+
+    let board, currentPiece, gameOver, paused, isChallengeMode = false;
+    let score = 0, highScore = parseInt(localStorage.getItem('highscore')) || 0;
+    let lastDropTime = 0;
+    const dropInterval = 500;
+
+    const scoreDisplay = document.getElementById('score');
+    const levelDisplay = document.getElementById('level');
+    const levelDisplayContainer = document.getElementById('levelDisplay');
+    const highScoreDisplay = document.getElementById('highscore');
+
+    highScoreDisplay.textContent = highScore;
+
+    function drawBlock(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * blockSize, y * blockSize, blockSize, blockSize);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x * blockSize, y * blockSize, blockSize, blockSize);
+    }
+
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (board[r][c]) drawBlock(c, r, board[r][c]);
+        }
+      }
+    }
+
+    function drawPiece() {
+      currentPiece.shape.forEach((row, r) => {
+        row.forEach((cell, c) => {
+          if (cell) drawBlock(currentPiece.x + c, currentPiece.y + r, currentPiece.color);
+        });
+      });
+    }
+
+    function generatePiece() {
+      const shape = tetrominoes[Math.floor(Math.random() * tetrominoes.length)];
+      return {
+        shape,
+        x: Math.floor(cols / 2) - Math.floor(shape[0].length / 2),
+        y: 0,
+        color: colors[Math.floor(Math.random() * colors.length)],
+      };
+    }
+
+    function checkCollision() {
+      return currentPiece.shape.some((row, r) =>
+        row.some((cell, c) => {
+          if (cell) {
+            const x = currentPiece.x + c;
+            const y = currentPiece.y + r;
+            return x < 0 || x >= cols || y >= rows || (y >= 0 && board[y][x]);
+          }
+          return false;
+        })
+      );
+    }
+
+    function placePiece() {
+      currentPiece.shape.forEach((row, r) => {
+        row.forEach((cell, c) => {
+          if (cell) board[currentPiece.y + r][currentPiece.x + c] = currentPiece.color;
+        });
+      });
+      for (let r = rows - 1; r >= 0; r--) {
+        if (board[r].every(cell => cell)) {
+          board.splice(r, 1);
+          board.unshift(Array(cols).fill(null));
+          score += 100;
+          scoreDisplay.textContent = score;
+          if (isChallengeMode) {
+            const level = Math.floor(score / 100) + 1;
+            levelDisplay.textContent = level;
+          }
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('highscore', highScore);
+            highScoreDisplay.textContent = highScore;
+          }
+        }
+      }
+      currentPiece = generatePiece();
+      if (checkCollision()) {
+        gameOver = true;
+        if (isChallengeMode) updateLeaderboard();
+      }
+    }
+
+    function movePiece(dx, dy) {
+      currentPiece.x += dx;
+      currentPiece.y += dy;
+      if (checkCollision()) {
+        currentPiece.x -= dx;
+        currentPiece.y -= dy;
+        if (dy > 0) placePiece();
+      }
+    }
+
+    function rotatePiece() {
+      const newShape = currentPiece.shape[0].map((_, i) =>
+        currentPiece.shape.map(row => row[i]).reverse()
+      );
+      const original = currentPiece.shape;
+      currentPiece.shape = newShape;
+      if (checkCollision()) currentPiece.shape = original;
+    }
+
+    function update() {
+      if (paused || gameOver) return;
+      const now = Date.now();
+      if (now - lastDropTime > dropInterval) {
+        movePiece(0, 1);
+        lastDropTime = now;
+      }
+      drawBoard();
+      drawPiece();
+      requestAnimationFrame(update);
+    }
+
+    function resetGame() {
+      board = Array.from({ length: rows }, () => Array(cols).fill(null));
+      currentPiece = generatePiece();
+      score = 0;
+      gameOver = false;
+      paused = false;
+      scoreDisplay.textContent = score;
+      levelDisplay.textContent = 1;
+      update();
+    }
+
+    function updateLeaderboard() {
+      const level = Math.floor(score / 100) + 1;
+      let leaderboard = JSON.parse(localStorage.getItem("leaderboard")) || [];
+      const existing = leaderboard.find(e => e.name === nickname);
+      if (!existing || level > existing.level) {
+        leaderboard = leaderboard.filter(e => e.name !== nickname);
+        leaderboard.push({ name: nickname, level });
+        leaderboard.sort((a, b) => b.level - a.level);
+        localStorage.setItem("leaderboard", JSON.stringify(leaderboard));
+      }
+    }
+
+    function showLeaderboard() {
+      const leaderboard = JSON.parse(localStorage.getItem("leaderboard")) || [];
+      const tbody = document.getElementById("leaderboardTable");
+      tbody.innerHTML = leaderboard.map(entry => `<tr><td>${entry.name}</td><td>${entry.level}</td></tr>`).join("");
+    }
+
+    function goToMenu() {
+      document.querySelectorAll("div").forEach(div => div.classList.remove("active"));
+      document.getElementById("menu").classList.add("active");
+    }
+
+    // Button actions
+    document.getElementById('menuToggle').onclick = () => {
+      const menu = document.getElementById('menuOptions');
+      menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+    };
+    document.getElementById('pause').onclick = () => paused = !paused;
+    document.getElementById('restart').onclick = resetGame;
+    document.getElementById('backToMenu').onclick = goToMenu;
+    document.getElementById('tutorialBtn').onclick = () => {
+      document.getElementById("menu").classList.remove("active");
+      document.getElementById("tutorialContainer").classList.add("active");
+    };
+    document.getElementById('leaderboardBtn').onclick = () => {
+      document.getElementById("menu").classList.remove("active");
+      document.getElementById("leaderboardContainer").classList.add("active");
+      showLeaderboard();
+    };
+    document.getElementById('changeNickname').onclick = () => {
+      nickname = prompt("Masukkan nickname baru:") || nickname;
+      localStorage.setItem("nickname", nickname);
+      nicknameDisplay.textContent = nickname;
+      document.getElementById("welcomeMsg").textContent = "Halo, " + nickname + "! Pilih mode permainan:";
+    };
+
+    document.getElementById('startNormal').onclick = () => {
+      isChallengeMode = false;
+      levelDisplayContainer.style.display = "none";
+      goToGame();
+    };
+    document.getElementById('startChallenge').onclick = () => {
+      isChallengeMode = true;
+      levelDisplayContainer.style.display = "block";
+      goToGame();
+    };
+
+    function goToGame() {
+      document.querySelectorAll("div").forEach(div => div.classList.remove("active"));
+      document.getElementById("gameContainer").classList.add("active");
+      resetGame();
+    }
+
+    // Controls
+    document.getElementById('left').onclick = () => !paused && movePiece(-1, 0);
+    document.getElementById('right').onclick = () => !paused && movePiece(1, 0);
+    document.getElementById('down').onclick = () => !paused && movePiece(0, 1);
+    document.getElementById('rotate').onclick = () => !paused && rotatePiece();
+  </script>
+</body>
+</html>
